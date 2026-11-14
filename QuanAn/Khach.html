@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Gọi Món Tuyên Quán</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+    :root { --primary: #ffca28; --bg: #f8f9fa; --text: #333; --card: #ffffff; --price: #2e7d32; }
+    body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0 0 80px 0; }
+    
+    .header { background: var(--primary); color: #111; padding: 20px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-bottom-left-radius: 20px; border-bottom-right-radius: 20px;}
+    .header h2 { margin: 0; font-size: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700;}
+    .table-badge { background: rgba(0,0,0,0.1); color: #111; padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; margin-top: 10px; display: inline-block; font-weight: 700;}
+    
+    .container { padding: 20px; max-width: 600px; margin: auto; }
+    .menu-item { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 12px; transition: transform 0.2s; }
+    .item-header { display: flex; justify-content: space-between; align-items: center; }
+    .item-info h3 { margin: 0 0 5px 0; font-size: 1.1rem; color: #1a1a1a; }
+    .item-info p { margin: 0; color: var(--price); font-weight: 700; }
+    
+    .qty-control { display: flex; align-items: center; gap: 15px; background: #f1f3f5; border-radius: 30px; padding: 5px; }
+    .btn-qty { width: 32px; height: 32px; border: none; border-radius: 50%; background: white; font-size: 1.2rem; font-weight: bold; color: var(--text); cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center;}
+    .btn-qty:active { transform: scale(0.9); }
+    .qty-number { font-weight: bold; font-size: 1.1rem; min-width: 20px; text-align: center; }
+    
+    .note-input { width: 100%; padding: 10px 15px; border: 1px solid #e9ecef; border-radius: 8px; background: #f8f9fa; font-family: inherit; font-size: 0.9rem; box-sizing: border-box; outline: none; transition: border 0.3s; }
+    .note-input:focus { border-color: #f5b041; background: white; }
+    
+    .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 15px 20px; box-shadow: 0 -4px 10px rgba(0,0,0,0.05); display: flex; justify-content: center; }
+    .btn-submit { background: var(--primary); color: #111; border: none; padding: 15px; width: 100%; max-width: 600px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 15px rgba(255, 202, 40, 0.4); transition: background 0.3s; }
+    .btn-submit:disabled { background: #e0e0e0; color: #888; box-shadow: none; cursor: not-allowed; }
+    
+    .loader { text-align: center; padding: 40px; color: #666; font-style: italic; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h2>🍜 Tuyên Quán</h2>
+    <div class="table-badge" id="tableHeader">Đang lấy số bàn...</div>
+  </div>
+
+  <div class="container" id="menuList">
+    <div class="loader">Đang tải thực đơn, vui lòng chờ...</div>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="btn-submit" id="btnSubmit" onclick="submitOrder()" disabled>CHỌN MÓN ĐỂ GỬI ĐƠN</button>
+  </div>
+
+  <script>
+    // === CẤU HÌNH SUPABASE (DÁN KEY CỦA BẠN VÀO ĐÂY) ===
+    const SUPABASE_URL = "https://chuvlaoxkskkrcumrodo.supabase.co"; 
+    const SUPABASE_KEY = "sb_publishable_sj_FgEHBTnHEGnCz4wJu5w_MuVYfRUf"; 
+    
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Lấy số bàn
+    const urlParams = new URLSearchParams(window.location.search);
+    const banParam = urlParams.get('ban');
+    const tableNumber = banParam ? banParam : 'Mang về';
+
+    // Hiển thị tự nhiên trên giao diện khách
+    document.querySelector('.table-badge').innerText = banParam ? `Bàn số ${banParam}` : '🛍️ Khách Mang Về';
+
+    let menuData = [];
+    let cart = {};
+
+    async function loadMenu() {
+      try {
+        const { data, error } = await db.from('menu').select('*').eq('is_available', true).order('thu_tu');
+        if (error) throw error;
+        menuData = data;
+        renderMenu();
+      } catch (err) {
+        document.getElementById('menuList').innerHTML = `<div class="loader" style="color: red;">Lỗi tải dữ liệu: ${err.message}</div>`;
+      }
+    }
+
+    function renderMenu() {
+      const container = document.getElementById('menuList');
+      container.innerHTML = '';
+
+      menuData.forEach(item => {
+        const qty = cart[item.id]?.qty || 0;
+        const note = cart[item.id]?.note || '';
+        
+        const card = document.createElement('div');
+        card.className = 'menu-item';
+        card.innerHTML = `
+          <div class="item-header">
+            <div class="item-info">
+              <h3>${item.name}</h3>
+              <p>${Number(item.price).toLocaleString()}đ</p>
+            </div>
+            <div class="qty-control">
+              <button class="btn-qty" onclick="updateQty(${item.id}, -1)">-</button>
+              <span class="qty-number">${qty}</span>
+              <button class="btn-qty" onclick="updateQty(${item.id}, 1)">+</button>
+            </div>
+          </div>
+          ${qty > 0 ? `<input type="text" class="note-input" placeholder="Thêm ghi chú (VD: ít bánh, không hành...)" value="${note}" onchange="updateNote(${item.id}, this.value)">` : ''}
+        `;
+        container.appendChild(card);
+      });
+      updateCheckoutButton();
+    }
+
+    function updateQty(itemId, delta) {
+      if (!cart[itemId]) cart[itemId] = { qty: 0, note: '' };
+      cart[itemId].qty += delta;
+      
+      if (cart[itemId].qty <= 0) {
+        delete cart[itemId];
+      }
+      renderMenu();
+    }
+
+    function updateNote(itemId, text) {
+      if (cart[itemId]) cart[itemId].note = text;
+    }
+
+    function updateCheckoutButton() {
+      const btn = document.getElementById('btnSubmit');
+      
+      let totalItems = 0;
+      let totalPrice = 0;
+
+      // Tính tổng số lượng và tổng tiền trong giỏ hàng
+      for (const id in cart) {
+        const itemQty = cart[id].qty;
+        totalItems += itemQty;
+        
+        // Tìm giá của món ăn tương ứng trong menuData
+        const menuItem = menuData.find(item => item.id == id);
+        if (menuItem) {
+          totalPrice += itemQty * menuItem.price;
+        }
+      }
+      
+      if (totalItems > 0) {
+        // Cập nhật nút bấm hiển thị cả TỔNG TIỀN và SỐ MÓN
+        btn.innerText = `GỬI ĐƠN • ${totalPrice.toLocaleString()}đ (${totalItems} món)`;
+        btn.disabled = false;
+      } else {
+        btn.innerText = `CHỌN MÓN ĐỂ GỬI ĐƠN`;
+        btn.disabled = true;
+      }
+    }
+
+    async function submitOrder() {
+      const itemIds = Object.keys(cart);
+      if (itemIds.length === 0) return;
+
+      const btn = document.getElementById('btnSubmit');
+      btn.innerText = 'ĐANG GỬI...';
+      btn.disabled = true;
+
+      try {
+        // 1. Tạo order
+        const { data: order, error: orderErr } = await db.from('orders')
+          .insert([{ table_number: tableNumber, status: 'pending' }])
+          .select().single();
+        if (orderErr) throw orderErr;
+
+        // 2. Thêm order items
+        const orderItems = itemIds.map(id => ({
+          order_id: order.id,
+          menu_id: parseInt(id),
+          quantity: cart[id].qty,
+          note: cart[id].note
+        }));
+        
+        const { error: itemErr } = await db.from('order_items').insert(orderItems);
+        if (itemErr) throw itemErr;
+
+        alert('🎉 Đã gửi đơn thành công! Bếp đang chuẩn bị món.');
+        cart = {}; // Xóa giỏ hàng
+        renderMenu();
+
+      } catch (err) {
+        alert('Có lỗi xảy ra: ' + err.message);
+        updateCheckoutButton(); // Reset lại nút
+      }
+    }
+    // BỘ LẮNG NGHE REALTIME CHO THỰC ĐƠN
+    db.channel('public:menu')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu' }, payload => {
+        
+        // NẾU CHỦ QUÁN BẤM "HẾT MÓN": Tự động xóa món đó khỏi giỏ hàng nếu khách đang chọn
+        if (payload.eventType === 'UPDATE' && payload.new.is_available === false) {
+          if (typeof cart !== 'undefined' && cart[payload.new.id]) {
+            delete cart[payload.new.id];
+          }
+        }
+        
+        // NẾU CHỦ QUÁN BẤM "XÓA MÓN": Tự xóa món khỏi giỏ hàng
+        if (payload.eventType === 'DELETE') {
+          if (typeof cart !== 'undefined' && cart[payload.old.id]) {
+            delete cart[payload.old.id];
+          }
+        }
+        
+        // Tải lại danh sách món ăn và cập nhật lại nút Gửi đơn (số tiền)
+        loadMenu(); 
+        if (typeof updateCheckoutButton === 'function') {
+          updateCheckoutButton();
+        }
+      })
+      .subscribe();
+    loadMenu();
+  </script>
+</body>
+</html>

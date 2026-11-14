@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Quản Lý Quán Hủ Tiếu</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { 
+      --bg: #f4f6f8; --card: #ffffff; --text: #333333; 
+      --primary: #1976d2; --accent: #d32f2f; --success: #2e7d32; --warning: #ed6c02;
+    }
+    body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; }
+    .container { max-width: 800px; margin: auto; padding: 20px; }
+    
+    /* CƠ CHẾ CHUYỂN TAB (SPA) */
+    .view-section { display: none; padding-bottom: 80px; animation: fadeIn 0.3s ease-in-out; }
+    .view-section.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* THANH ĐIỀU HƯỚNG DƯỚI CÙNG (BOTTOM NAV) */
+    .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); display: flex; z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
+    .nav-item { flex: 1; padding: 15px 0; text-align: center; background: none; border: none; font-size: 0.95rem; font-weight: 700; color: #888; cursor: pointer; border-top: 3px solid transparent; transition: 0.2s; display: flex; flex-direction: column; align-items: center; gap: 4px;}
+    .nav-item.active { color: var(--primary); border-top-color: var(--primary); background: #f0f7ff; }
+
+    /* --- CSS TAB BẾP --- */
+    .header-bep { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px; }
+    .header-bep h1 { margin: 0; font-size: 1.5rem; color: var(--accent); }
+    .orders-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+    .order-card { background: var(--card); border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; border-top: 5px solid var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .table-number { font-size: 1.4rem; font-weight: 800; color: #111; border-bottom: 1px dashed #ccc; padding-bottom: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;}
+    .order-time { font-size: 0.9rem; color: #666; font-weight: 600; }
+    .item-row { background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 8px; }
+    .item-main { display: flex; justify-content: space-between; font-weight: 700; color: #222; }
+    .item-qty { color: var(--accent); font-size: 1.1rem; }
+    .item-note { color: var(--accent); font-size: 0.9rem; font-style: italic; margin-top: 4px; }
+    .btn-done { background: var(--success); color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: bold; margin-top: 10px; cursor: pointer; }
+
+    /* --- CSS TAB MENU --- */
+    .add-box { background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; }
+    .add-box input { padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 1rem; outline: none; }
+    .btn-add { background: var(--warning); color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    .menu-row { background: #fff; padding: 12px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0e0e0; }
+    .menu-actions { display: flex; gap: 5px; }
+    .btn-edit { background: var(--primary); color: white; border: none; padding: 6px 10px; border-radius: 6px; font-weight: 600; cursor: pointer;}
+    .btn-delete { background: var(--accent); color: white; border: none; padding: 6px 10px; border-radius: 6px; font-weight: 600; cursor: pointer;}
+    .btn-toggle { border: none; padding: 6px 10px; border-radius: 6px; font-weight: 600; cursor: pointer; min-width: 85px; color: white;}
+    .available { background: var(--success); } .sold-out { background: #9e9e9e; }
+
+    /* --- CSS TAB THỐNG KÊ --- */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: #fff; padding: 15px; border-radius: 12px; text-align: center; border: 1px solid #e0e0e0; }
+    .stat-card h3 { margin: 0 0 5px 0; font-size: 0.9rem; color: #666; }
+    .stat-card .amount { font-size: 1.4rem; font-weight: 800; }
+    .c-today .amount { color: var(--success); } .c-month .amount { color: var(--primary); } .c-year .amount { color: var(--warning); }
+    .history-section { background: #fff; padding: 15px; border-radius: 12px; border: 1px solid #e0e0e0; }
+    .history-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #e0e0e0; padding: 10px 0; }
+    .history-row:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+
+  <!-- NỘI DUNG CHÍNH CỦA APP -->
+  <div class="container">
+
+    <!-- 1. TAB BẾP -->
+    <div id="tab-bep" class="view-section active">
+      <div class="header-bep">
+        <h1>👨‍🍳 Chờ Phục Vụ</h1>
+        <div style="font-size: 0.85rem; color: var(--success); font-weight: 700;" id="connStatus">Đang kết nối...</div>
+      </div>
+      <div class="orders-grid" id="ordersGrid">Đang tải dữ liệu...</div>
+    </div>
+
+    <!-- 2. TAB MENU -->
+    <div id="tab-menu" class="view-section">
+      <h2 style="color: #111; text-align: center; margin-top: 0;">📋 Quản Lý Thực Đơn</h2>
+      <div class="add-box">
+        <input type="text" id="newName" placeholder="Tên món mới (VD: Hủ tiếu mực)">
+        <input type="number" id="newPrice" placeholder="Giá tiền (VD: 50000)">
+        <button class="btn-add" onclick="addMenuItem()">+ THÊM MÓN MỚI</button>
+      </div>
+      <div id="menuContainer">Đang tải danh sách...</div>
+    </div>
+
+    <!-- 3. TAB THỐNG KÊ -->
+    <div id="tab-thongke" class="view-section">
+      <h2 style="color: #111; text-align: center; margin-top: 0;">📊 Báo Cáo Doanh Thu</h2>
+      <div class="stats-grid">
+        <div class="stat-card c-today"><h3>Hôm nay</h3><div class="amount" id="revToday">0đ</div></div>
+        <div class="stat-card c-month"><h3>Tháng này</h3><div class="amount" id="revMonth">0đ</div></div>
+        <div class="stat-card c-year"><h3>Năm nay</h3><div class="amount" id="revYear">0đ</div></div>
+      </div>
+      <div class="history-section">
+        <h3 style="margin-top:0; border-bottom:2px solid #f0f0f0; padding-bottom:10px;">Lịch sử đơn (50 đơn gần nhất)</h3>
+        <div id="historyList">Đang tải lịch sử...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- THANH ĐIỀU HƯỚNG DƯỚI CÙNG -->
+  <div class="bottom-nav">
+    <button class="nav-item active" onclick="switchTab('bep', this)">
+      <span style="font-size: 1.4rem;">👨‍🍳</span> Bếp
+    </button>
+    <button class="nav-item" onclick="switchTab('menu', this)">
+      <span style="font-size: 1.4rem;">📋</span> Menu
+    </button>
+    <button class="nav-item" onclick="switchTab('thongke', this)">
+      <span style="font-size: 1.4rem;">📊</span> Thống kê
+    </button>
+  </div>
+
+  <script>
+    // === CẤU HÌNH SUPABASE ===
+    const SUPABASE_URL = "https://chuvlaoxkskkrcumrodo.supabase.co"; 
+    const SUPABASE_KEY = "sb_publishable_sj_FgEHBTnHEGnCz4wJu5w_MuVYfRUf"; 
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const formatMoney = (amount) => Number(amount).toLocaleString('vi-VN') + 'đ';
+
+    // ==========================================
+    // 0. CHỨC NĂNG CHUYỂN TAB
+    // ==========================================
+    function switchTab(tabId, btnElement) {
+      // Ẩn tất cả nội dung
+      document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+      // Tắt màu tất cả nút
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      
+      // Bật nội dung và nút được chọn
+      document.getElementById(`tab-${tabId}`).classList.add('active');
+      btnElement.classList.add('active');
+
+      // Tải lại dữ liệu tươi mỗi khi chuyển tab
+      if(tabId === 'menu') loadMenu();
+      if(tabId === 'thongke') fetchStatistics();
+    }
+
+    // ==========================================
+    // 1. LOGIC TAB BẾP
+    // ==========================================
+    async function fetchPendingOrders() {
+      const { data: orders, error } = await db.from('orders')
+        .select(`id, table_number, created_at, order_items (quantity, note, menu (name))`)
+        .eq('status', 'pending').order('created_at', { ascending: true });
+      if (error) return;
+      
+      const container = document.getElementById('ordersGrid');
+      if (orders.length === 0) {
+        container.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color:#888;">Chưa có đơn hàng mới nào ☕</div>';
+        return;
+      }
+      container.innerHTML = '';
+      orders.forEach(order => {
+        let itemsHtml = '';
+        order.order_items.forEach(item => {
+          itemsHtml += `
+            <div class="item-row">
+              <div class="item-main"><span>${item.menu ? item.menu.name : 'Món đã xóa'}</span><span class="item-qty">x${item.quantity}</span></div>
+              ${item.note ? `<div class="item-note">📝 ${item.note}</div>` : ''}
+            </div>`;
+        });
+        const timeStr = new Date(order.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+        container.innerHTML += `
+          <div class="order-card">
+            <div class="table-number">${order.table_number === 'Mang về' ? '🛍️ Mang về' : 'Bàn ' + order.table_number} <span class="order-time">🕒 ${timeStr}</span></div>
+            <div>${itemsHtml}</div>
+            <button class="btn-done" onclick="markServed(${order.id}, this)">ĐÃ PHỤC VỤ XONG</button>
+          </div>`;
+      });
+    }
+
+    async function markServed(orderId, btn) {
+      btn.innerText = "Đang xử lý..."; btn.style.opacity = 0.5;
+      await db.from('orders').update({ status: 'served' }).eq('id', orderId);
+      // Realtime sẽ tự động quét và load lại
+    }
+
+    // ==========================================
+    // 2. LOGIC TAB MENU
+    // ==========================================
+   let currentMenu = []; // Biến toàn cục để lưu danh sách món hiện tại
+
+    async function loadMenu() {
+      // Đổi sắp xếp từ 'id' sang 'thu_tu'
+      const { data } = await db.from('menu').select('*').order('thu_tu');
+      currentMenu = data; 
+      
+      const container = document.getElementById('menuContainer');
+      container.innerHTML = '';
+      
+      data.forEach((item, index) => {
+        container.innerHTML += `
+          <div class="menu-row">
+            <div style="display:flex; align-items:center; gap: 15px; flex-grow: 1;">
+              <!-- Cụm nút di chuyển Lên/Xuống -->
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <button onclick="moveItem(${index}, -1)" style="border:none; background:none; cursor:pointer; font-size:1.2rem; opacity:${index === 0 ? '0.2' : '1'};" ${index === 0 ? 'disabled' : ''}>🔼</button>
+                <button onclick="moveItem(${index}, 1)" style="border:none; background:none; cursor:pointer; font-size:1.2rem; opacity:${index === data.length - 1 ? '0.2' : '1'};" ${index === data.length - 1 ? 'disabled' : ''}>🔽</button>
+              </div>
+              
+              <!-- Tên và giá món -->
+              <div>
+                <strong style="color:#111; ${!item.is_available ? 'text-decoration:line-through;color:#999;' : ''}">${item.name}</strong><br>
+                <small style="color:#666; font-weight:600;">${formatMoney(item.price)}</small>
+              </div>
+            </div>
+            
+            <!-- Cụm nút thao tác -->
+            <div class="menu-actions">
+              <button class="btn-edit" onclick="editPrice(${item.id}, ${item.price})">Sửa</button>
+              <button class="btn-toggle ${item.is_available ? 'available' : 'sold-out'}" onclick="toggleStatus(${item.id}, ${item.is_available})">
+                ${item.is_available ? 'Còn' : 'Hết'}
+              </button>
+              <button class="btn-delete" onclick="deleteMenuItem(${item.id})">Xóa</button>
+            </div>
+          </div>`;
+      });
+    }
+
+    // HÀM MỚI: Đổi chỗ 2 món ăn cho nhau
+    async function moveItem(index, direction) {
+      if (index + direction < 0 || index + direction >= currentMenu.length) return;
+
+      const item1 = currentMenu[index];
+      const item2 = currentMenu[index + direction];
+
+      // Đổi giá trị 'thu_tu' của 2 món cho nhau và cập nhật lên Supabase
+      await db.from('menu').update({ thu_tu: item2.thu_tu }).eq('id', item1.id);
+      await db.from('menu').update({ thu_tu: item1.thu_tu }).eq('id', item2.id);
+
+      loadMenu(); // Tải lại danh sách
+    }
+
+    async function addMenuItem() {
+      const name = document.getElementById('newName').value.trim();
+      const price = parseInt(document.getElementById('newPrice').value);
+      if (!name || !price) return alert('Nhập đủ tên và giá (chỉ nhập số)!');
+      
+      const btn = document.querySelector('.btn-add');
+      btn.innerText = "Đang thêm...";
+
+      // Tìm số thứ tự lớn nhất hiện tại để món mới luôn nằm ở dưới cùng
+      const maxThuTu = currentMenu.length > 0 ? Math.max(...currentMenu.map(m => m.thu_tu)) : 0;
+      
+      const { error } = await db.from('menu').insert([{ name, price, is_available: true, thu_tu: maxThuTu + 1 }]);
+      
+      btn.innerText = "+ THÊM MÓN MỚI";
+      if (error) alert('Lỗi: ' + error.message);
+      else {
+        document.getElementById('newName').value = ''; 
+        document.getElementById('newPrice').value = '';
+        loadMenu();
+      }
+    }
+    async function editPrice(id, oldPrice) {
+      const newPrice = prompt('Nhập giá mới (VNĐ):', oldPrice);
+      if (newPrice && !isNaN(newPrice)) { await db.from('menu').update({ price: parseInt(newPrice) }).eq('id', id); loadMenu(); }
+    }
+    async function toggleStatus(id, status) { await db.from('menu').update({ is_available: !status }).eq('id', id); loadMenu(); }
+    async function deleteMenuItem(id) {
+      if (!confirm('Xóa hẳn món này?')) return;
+      const { error } = await db.from('menu').delete().eq('id', id);
+      if (error) alert('Lỗi: Món đã có trong lịch sử đơn, hãy dùng nút "Hết món" thay thế.'); else loadMenu();
+    }
+
+    // ==========================================
+    // 3. LOGIC TAB THỐNG KÊ
+    // ==========================================
+    async function fetchStatistics() {
+      const { data: orders } = await db.from('orders').select(`id, table_number, created_at, order_items(quantity, menu(name, price))`).eq('status', 'served').order('created_at', { ascending: false });
+      
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
+
+      let revToday = 0, revMonth = 0, revYear = 0; let historyHtml = '';
+
+      (orders || []).forEach((order, idx) => {
+        const orderTime = new Date(order.created_at).getTime();
+        let total = 0; let itemsTxt = '';
+        order.order_items.forEach(it => {
+          const p = it.menu ? it.menu.price : 0;
+          total += (p * it.quantity);
+          itemsTxt += `${it.menu ? it.menu.name : 'Đã xóa'} x${it.quantity}, `;
+        });
+        if (orderTime >= startOfYear) revYear += total;
+        if (orderTime >= startOfMonth) revMonth += total;
+        if (orderTime >= startOfDay) revToday += total;
+
+        if (idx < 50) {
+          const t = new Date(order.created_at).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'});
+          historyHtml += `
+            <div class="history-row">
+              <div style="flex-grow:1; padding-right:10px;">
+                <strong style="color:#111;">${order.table_number === 'Mang về' ? '🛍️ Mang về' : 'Bàn ' + order.table_number}</strong> <small style="color:#888;">(${t})</small><br>
+                <small style="color:#555; line-height:1.4;">${itemsTxt.slice(0, -2)}</small>
+              </div>
+              <strong style="color:var(--success); font-size:1.1rem; min-width:70px; text-align:right;">+${formatMoney(total)}</strong>
+            </div>`;
+        }
+      });
+      document.getElementById('revToday').innerText = formatMoney(revToday);
+      document.getElementById('revMonth').innerText = formatMoney(revMonth);
+      document.getElementById('revYear').innerText = formatMoney(revYear);
+      document.getElementById('historyList').innerHTML = historyHtml || '<div style="text-align:center;color:#888;padding:20px;">Trống</div>';
+    }
+
+    // ==========================================
+    // 5. HÀM ĐỌC GIỌNG NÓI TIẾNG VIỆT (Đã thêm Ghi chú)
+    // ==========================================
+    function speakOrder(orderId, tableNumber) {
+      setTimeout(async () => {
+        try {
+          // Bổ sung 'note' vào lệnh select để lấy dữ liệu ghi chú
+          const { data: items } = await db.from('order_items')
+            .select('quantity, note, menu(name)')
+            .eq('order_id', orderId);
+            
+          let prefix = (tableNumber === 'Mang về') ? 'Đơn mang về' : `Bàn số ${tableNumber}`;
+          let textToSpeak = `${prefix} gọi: `;
+          
+          if (items && items.length > 0) {
+            let dsMon = items.map(item => {
+              let tenMon = `${item.quantity} ${item.menu ? item.menu.name : 'món'}`;
+              
+              // Nếu khách có nhập ghi chú, ghép thêm chữ "ghi chú" vào sau tên món
+              if (item.note && item.note.trim() !== '') {
+                tenMon += `, ghi chú ${item.note}`;
+              }
+              return tenMon;
+            });
+            
+            // Dùng dấu chấm để máy ngắt hơi nghỉ giữa các món ăn
+            textToSpeak += dsMon.join('. '); 
+          } else {
+            textToSpeak = `Có đơn mới ở Bàn số ${tableNumber}`;
+          }
+
+          const utterance = new SpeechSynthesisUtterance(textToSpeak);
+          utterance.lang = 'vi-VN'; 
+          utterance.rate = 0.9;     
+          utterance.pitch = 1;      
+          
+          window.speechSynthesis.speak(utterance);
+        } catch (e) { 
+          console.log("Lỗi đọc giọng nói:", e); 
+        }
+      }, 1000);
+    }
+    // ==========================================
+    // KHỞI CHẠY & LẮNG NGHE REALTIME
+    // ==========================================
+    fetchPendingOrders(); // Load trang Bếp đầu tiên
+
+    db.channel('public:orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
+        
+        // NẾU CÓ ĐƠN MỚI -> ĐỌC TÊN MÓN VÀ SỐ BÀN
+        if (payload.eventType === 'INSERT') {
+          speakOrder(payload.new.id, payload.new.table_number);
+        }
+
+        // Cập nhật lại giao diện Bếp và Thống kê
+        fetchPendingOrders(); 
+        fetchStatistics();
+      })
+      .subscribe((status) => {
+        if(status === 'SUBSCRIBED') document.getElementById('connStatus').innerText = '🟢 Realtime';
+      });
+  </script>
+</body>
+</html>
