@@ -33,6 +33,12 @@
     .btn-submit:disabled { background: #e0e0e0; color: #888; box-shadow: none; cursor: not-allowed; }
     
     .loader { text-align: center; padding: 40px; color: #666; font-style: italic; }
+    .category-bar { position: sticky; top: 0; z-index: 100; background: var(--bg); padding: 12px 20px; display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid #e9ecef; scrollbar-width: none; }
+    .category-bar::-webkit-scrollbar { display: none; }
+    .cat-pill { background: white; border: 1px solid #ddd; padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; color: #555; white-space: nowrap; cursor: pointer; transition: 0.2s; }
+    .cat-pill.active { background: #111; color: var(--primary); border-color: #111; }
+    .category-heading { font-size: 1.15rem; font-weight: 700; color: #111; margin: 20px 0 12px 0; padding-left: 10px; border-left: 4px solid var(--primary); }
+    .category-heading:first-child { margin-top: 5px; }
   </style>
 </head>
 <body>
@@ -42,6 +48,7 @@
     <div class="table-badge" id="tableHeader">Đang lấy số bàn...</div>
   </div>
 
+  <div class="category-bar" id="categoryBar"></div>
   <div class="container" id="menuList">
     <div class="loader">Đang tải thực đơn, vui lòng chờ...</div>
   </div>
@@ -79,32 +86,73 @@
       }
     }
 
+    let selectedCategory = 'Tất cả';
+
     function renderMenu() {
+      // 1. Tạo thanh lọc danh mục phía trên
+      const catBar = document.getElementById('categoryBar');
+      const categories = ['Tất cả', ...new Set(menuData.map(item => item.category || 'Món chính'))];
+      
+      // Nếu danh mục đang chọn bị xóa/hết toàn bộ món thì quay về 'Tất cả'
+      if (!categories.includes(selectedCategory)) selectedCategory = 'Tất cả';
+
+      catBar.innerHTML = '';
+      categories.forEach(cat => {
+        const pill = document.createElement('button');
+        pill.className = `cat-pill ${selectedCategory === cat ? 'active' : ''}`;
+        pill.innerText = cat;
+        pill.onclick = () => {
+          selectedCategory = cat;
+          renderMenu();
+        };
+        catBar.appendChild(pill);
+      });
+
+      // 2. Lọc và gom nhóm món ăn để hiển thị
       const container = document.getElementById('menuList');
       container.innerHTML = '';
 
-      menuData.forEach(item => {
-        const qty = cart[item.id]?.qty || 0;
-        const note = cart[item.id]?.note || '';
-        
-        const card = document.createElement('div');
-        card.className = 'menu-item';
-        card.innerHTML = `
-          <div class="item-header">
-            <div class="item-info">
-              <h3>${item.name}</h3>
-              <p>${Number(item.price).toLocaleString()}đ</p>
-            </div>
-            <div class="qty-control">
-              <button class="btn-qty" onclick="updateQty(${item.id}, -1)">-</button>
-              <span class="qty-number">${qty}</span>
-              <button class="btn-qty" onclick="updateQty(${item.id}, 1)">+</button>
-            </div>
-          </div>
-          ${qty > 0 ? `<input type="text" class="note-input" placeholder="Thêm ghi chú (VD: ít bánh, không hành...)" value="${note}" onchange="updateNote(${item.id}, this.value)">` : ''}
-        `;
-        container.appendChild(card);
+      const filteredData = selectedCategory === 'Tất cả' 
+        ? menuData 
+        : menuData.filter(item => (item.category || 'Món chính') === selectedCategory);
+
+      const grouped = {};
+      filteredData.forEach(item => {
+        const cat = item.category || 'Món chính';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(item);
       });
+
+      for (const [catName, items] of Object.entries(grouped)) {
+        const heading = document.createElement('div');
+        heading.className = 'category-heading';
+        heading.innerText = catName;
+        container.appendChild(heading);
+
+        items.forEach(item => {
+          const qty = cart[item.id]?.qty || 0;
+          const note = cart[item.id]?.note || '';
+          
+          const card = document.createElement('div');
+          card.className = 'menu-item';
+          card.innerHTML = `
+            <div class="item-header">
+              <div class="item-info">
+                <h3>${item.name}</h3>
+                <p>${Number(item.price).toLocaleString()}đ</p>
+              </div>
+              <div class="qty-control">
+                <button class="btn-qty" onclick="updateQty(${item.id}, -1)">-</button>
+                <span class="qty-number">${qty}</span>
+                <button class="btn-qty" onclick="updateQty(${item.id}, 1)">+</button>
+              </div>
+            </div>
+            ${qty > 0 ? `<input type="text" class="note-input" placeholder="Thêm ghi chú (VD: ít bánh, không hành...)" value="${note}" onchange="updateNote(${item.id}, this.value)">` : ''}
+          `;
+          container.appendChild(card);
+        });
+      }
+
       updateCheckoutButton();
     }
 

@@ -77,6 +77,12 @@
     <div id="tab-menu" class="view-section">
       <h2 style="color: #111; text-align: center; margin-top: 0;">📋 Quản Lý Thực Đơn</h2>
       <div class="add-box">
+        <input type="text" id="newCategory" list="categorySuggestions" placeholder="Danh mục (VD: Món chính, Món thêm, Nước uống...)">
+        <datalist id="categorySuggestions">
+          <option value="Món chính">
+          <option value="Món thêm">
+          <option value="Nước uống">
+        </datalist>
         <input type="text" id="newName" placeholder="Tên món mới (VD: Hủ tiếu mực)">
         <input type="number" id="newPrice" placeholder="Giá tiền (VD: 50000)">
         <button class="btn-add" onclick="addMenuItem()">+ THÊM MÓN MỚI</button>
@@ -93,7 +99,7 @@
         <div class="stat-card c-year"><h3>Năm nay</h3><div class="amount" id="revYear">0đ</div></div>
       </div>
       <div class="history-section">
-        <h3 style="margin-top:0; border-bottom:2px solid #f0f0f0; padding-bottom:10px;">Lịch sử đơn (50 đơn gần nhất)</h3>
+        <h3 style="margin-top:0; border-bottom:2px solid #f0f0f0; padding-bottom:10px;">Lịch sử đơn trong ngày</h3>
         <div id="historyList">Đang tải lịch sử...</div>
       </div>
     </div>
@@ -181,60 +187,89 @@
     // ==========================================
     // 2. LOGIC TAB MENU
     // ==========================================
-   let currentMenu = []; // Biến toàn cục để lưu danh sách món hiện tại
+   let currentMenu = [];
 
     async function loadMenu() {
-      // Đổi sắp xếp từ 'id' sang 'thu_tu'
       const { data } = await db.from('menu').select('*').order('thu_tu');
-      currentMenu = data; 
+      currentMenu = data || []; 
       
       const container = document.getElementById('menuContainer');
       container.innerHTML = '';
-      
-      data.forEach((item, index) => {
-        container.innerHTML += `
-          <div class="menu-row">
-            <div style="display:flex; align-items:center; gap: 15px; flex-grow: 1;">
-              <!-- Cụm nút di chuyển Lên/Xuống -->
-              <div style="display:flex; flex-direction:column; gap:2px;">
-                <button onclick="moveItem(${index}, -1)" style="border:none; background:none; cursor:pointer; font-size:1.2rem; opacity:${index === 0 ? '0.2' : '1'};" ${index === 0 ? 'disabled' : ''}>🔼</button>
-                <button onclick="moveItem(${index}, 1)" style="border:none; background:none; cursor:pointer; font-size:1.2rem; opacity:${index === data.length - 1 ? '0.2' : '1'};" ${index === data.length - 1 ? 'disabled' : ''}>🔽</button>
-              </div>
-              
-              <!-- Tên và giá món -->
-              <div>
-                <strong style="color:#111; ${!item.is_available ? 'text-decoration:line-through;color:#999;' : ''}">${item.name}</strong><br>
-                <small style="color:#666; font-weight:600;">${formatMoney(item.price)}</small>
-              </div>
-            </div>
-            
-            <!-- Cụm nút thao tác -->
-            <div class="menu-actions">
-              <button class="btn-edit" onclick="editPrice(${item.id}, ${item.price})">Sửa</button>
-              <button class="btn-toggle ${item.is_available ? 'available' : 'sold-out'}" onclick="toggleStatus(${item.id}, ${item.is_available})">
-                ${item.is_available ? 'Còn' : 'Hết'}
-              </button>
-              <button class="btn-delete" onclick="deleteMenuItem(${item.id})">Xóa</button>
-            </div>
-          </div>`;
+
+      // Cập nhật gợi ý danh mục từ dữ liệu thực tế
+      const categories = [...new Set(currentMenu.map(item => item.category || 'Món chính'))];
+      const datalist = document.getElementById('categorySuggestions');
+      if (datalist && categories.length > 0) {
+        datalist.innerHTML = categories.map(c => `<option value="${c}">`).join('');
+      }
+
+      // Gom nhóm các món theo danh mục
+      const grouped = {};
+      currentMenu.forEach(item => {
+        const cat = item.category || 'Món chính';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(item);
       });
+
+      // Hiển thị từng nhóm danh mục
+      for (const [categoryName, items] of Object.entries(grouped)) {
+        container.innerHTML += `
+          <div style="margin: 20px 0 10px 0; padding: 8px 12px; background: #e3f2fd; color: #1565c0; font-weight: 800; border-radius: 8px; font-size: 1rem;">
+            📂 ${categoryName} (${items.length})
+          </div>`;
+
+        items.forEach((item, index) => {
+          const prevId = index > 0 ? items[index - 1].id : null;
+          const nextId = index < items.length - 1 ? items[index + 1].id : null;
+
+          container.innerHTML += `
+            <div class="menu-row">
+              <div style="display:flex; align-items:center; gap: 15px; flex-grow: 1;">
+                <div style="display:flex; flex-direction:column; gap:2px;">
+                  <button onclick="swapOrder(${item.id}, ${prevId})" style="border:none; background:none; cursor:pointer; font-size:1.2rem; opacity:${!prevId ? '0.2' : '1'};" ${!prevId ? 'disabled' : ''}>🔼</button>
+                  <button onclick="swapOrder(${item.id}, ${nextId})" style="border:none; background:none; cursor:pointer; font-size:1.2rem; opacity:${!nextId ? '0.2' : '1'};" ${!nextId ? 'disabled' : ''}>🔽</button>
+                </div>
+                <div>
+                  <strong style="color:#111; ${!item.is_available ? 'text-decoration:line-through;color:#999;' : ''}">${item.name}</strong><br>
+                  <small style="color:#666; font-weight:600;">${formatMoney(item.price)}</small>
+                  <span onclick="changeCategory(${item.id}, '${categoryName.replace(/'/g, "\\'")}')" style="margin-left:8px; font-size:0.75rem; background:#f1f3f5; padding:2px 6px; border-radius:4px; color:#555; cursor:pointer;" title="Bấm để đổi danh mục">🏷️ Đổi mục</span>
+                </div>
+              </div>
+              <div class="menu-actions">
+                <button class="btn-edit" onclick="editPrice(${item.id}, ${item.price})">Sửa</button>
+                <button class="btn-toggle ${item.is_available ? 'available' : 'sold-out'}" onclick="toggleStatus(${item.id}, ${item.is_available})">
+                  ${item.is_available ? 'Còn' : 'Hết'}
+                </button>
+                <button class="btn-delete" onclick="deleteMenuItem(${item.id})">Xóa</button>
+              </div>
+            </div>`;
+        });
+      }
     }
 
-    // HÀM MỚI: Đổi chỗ 2 món ăn cho nhau
-    async function moveItem(index, direction) {
-      if (index + direction < 0 || index + direction >= currentMenu.length) return;
+    // Đổi vị trí 2 món trong cùng danh mục
+    async function swapOrder(id1, id2) {
+      if (!id1 || !id2) return;
+      const item1 = currentMenu.find(m => m.id === id1);
+      const item2 = currentMenu.find(m => m.id === id2);
+      if (!item1 || !item2) return;
 
-      const item1 = currentMenu[index];
-      const item2 = currentMenu[index + direction];
-
-      // Đổi giá trị 'thu_tu' của 2 món cho nhau và cập nhật lên Supabase
       await db.from('menu').update({ thu_tu: item2.thu_tu }).eq('id', item1.id);
       await db.from('menu').update({ thu_tu: item1.thu_tu }).eq('id', item2.id);
+      loadMenu();
+    }
 
-      loadMenu(); // Tải lại danh sách
+    // Đổi danh mục nhanh cho món đã tạo
+    async function changeCategory(id, oldCat) {
+      const newCat = prompt('Nhập tên danh mục mới cho món này:', oldCat);
+      if (newCat && newCat.trim() !== '') {
+        await db.from('menu').update({ category: newCat.trim() }).eq('id', id);
+        loadMenu();
+      }
     }
 
     async function addMenuItem() {
+      const category = document.getElementById('newCategory').value.trim() || 'Món chính';
       const name = document.getElementById('newName').value.trim();
       const price = parseInt(document.getElementById('newPrice').value);
       if (!name || !price) return alert('Nhập đủ tên và giá (chỉ nhập số)!');
@@ -242,10 +277,8 @@
       const btn = document.querySelector('.btn-add');
       btn.innerText = "Đang thêm...";
 
-      // Tìm số thứ tự lớn nhất hiện tại để món mới luôn nằm ở dưới cùng
       const maxThuTu = currentMenu.length > 0 ? Math.max(...currentMenu.map(m => m.thu_tu)) : 0;
-      
-      const { error } = await db.from('menu').insert([{ name, price, is_available: true, thu_tu: maxThuTu + 1 }]);
+      const { error } = await db.from('menu').insert([{ category, name, price, is_available: true, thu_tu: maxThuTu + 1 }]);
       
       btn.innerText = "+ THÊM MÓN MỚI";
       if (error) alert('Lỗi: ' + error.message);
@@ -288,20 +321,22 @@
           itemsTxt += `${it.menu ? it.menu.name : 'Đã xóa'} x${it.quantity}, `;
         });
         if (orderTime >= startOfYear) revYear += total;
-        if (orderTime >= startOfMonth) revMonth += total;
-        if (orderTime >= startOfDay) revToday += total;
+      if (orderTime >= startOfMonth) revMonth += total;
 
-        if (idx < 50) {
-          const t = new Date(order.created_at).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'});
-          historyHtml += `
-            <div class="history-row">
-              <div style="flex-grow:1; padding-right:10px;">
-                <strong style="color:#111;">${order.table_number === 'Mang về' ? '🛍️ Mang về' : 'Bàn ' + order.table_number}</strong> <small style="color:#888;">(${t})</small><br>
-                <small style="color:#555; line-height:1.4;">${itemsTxt.slice(0, -2)}</small>
-              </div>
-              <strong style="color:var(--success); font-size:1.1rem; min-width:70px; text-align:right;">+${formatMoney(total)}</strong>
-            </div>`;
-        }
+      // Chỉ cộng doanh thu ngày và hiển thị các đơn thuộc ngày hôm nay
+      if (orderTime >= startOfDay) {
+        revToday += total;
+
+        const t = new Date(order.created_at).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'});
+        historyHtml += `
+          <div class="history-row">
+            <div style="flex-grow:1; padding-right:10px;">
+              <strong style="color:#111;">${order.table_number === 'Mang về' ? '🛍️ Mang về' : 'Bàn ' + order.table_number}</strong> <small style="color:#888;">(${t})</small><br>
+              <small style="color:#555; line-height:1.4;">${itemsTxt.slice(0, -2)}</small>
+            </div>
+            <strong style="color:var(--success); font-size:1.1rem; min-width:70px; text-align:right;">+${formatMoney(total)}</strong>
+          </div>`;
+      }
       });
       document.getElementById('revToday').innerText = formatMoney(revToday);
       document.getElementById('revMonth').innerText = formatMoney(revMonth);
